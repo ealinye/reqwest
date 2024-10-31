@@ -139,10 +139,10 @@ where
         + 'static,
     Fut: Future<Output = http::Response<reqwest::Body>> + Send + 'static,
 {
+    use std::sync::Arc;
+
     use bytes::Buf;
     use http_body_util::BodyExt;
-    use quinn::crypto::rustls::QuicServerConfig;
-    use std::sync::Arc;
 
     // Spawn new runtime in thread to prevent reactor execution context conflict
     let test_name = thread::current().name().unwrap_or("<unknown>").to_string();
@@ -151,22 +151,23 @@ where
             .enable_all()
             .build()
             .expect("new rt");
+        let _enter_rt = rt.enter();
 
         let cert = std::fs::read("tests/support/server.cert").unwrap().into();
         let key = std::fs::read("tests/support/server.key").unwrap().try_into().unwrap();
 
-        let mut tls_config = rustls::ServerConfig::builder()
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        _ = rustls::crypto::ring::default_provider().install_default();
+        let mut tls_config = rustls::ServerConfig::builder_with_provider(provider)
             .with_no_client_auth()
             .with_single_cert(vec![cert], key)
             .unwrap();
         tls_config.max_early_data_size = u32::MAX;
         tls_config.alpn_protocols = vec![b"h3".into()];
 
-        let server_config = quinn::ServerConfig::with_crypto(Arc::new(QuicServerConfig::try_from(tls_config).unwrap()));
-        let endpoint = rt.block_on(async move {
-            quinn::Endpoint::server(server_config, "[::1]:0".parse().unwrap()).unwrap()
-        });
-        let addr = endpoint.local_addr().unwrap();
+        let endpoint = h3_shim::quic::ArcQuicServer::bind_with_tls(["[::1]:0".parse().unwrap()],true,tls_config).listen().unwrap();
+        let addr = endpoint.addresses().next().copied().unwrap();
+
 
         let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
         let (panic_tx, panic_rx) = std_mpsc::channel();
@@ -185,9 +186,8 @@ where
                             _ = &mut shutdown_rx => {
                                 break;
                             }
-                            Some(accepted) = endpoint.accept() => {
-                                let conn = accepted.await.expect("accepted");
-                                let mut h3_conn = h3::server::Connection::new(h3_quinn::Connection::new(conn)).await.unwrap();
+                            Ok((conn, _from)) = endpoint.accept() => {
+                                let mut h3_conn = h3::server::Connection::new(h3_shim::QuicConnection::new(conn).await).await.unwrap();
                                 let events_tx = events_tx.clone();
                                 let func = func.clone();
                                 tokio::spawn(async move {

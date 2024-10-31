@@ -1,4 +1,6 @@
 use bytes::Bytes;
+use h3_shim::conn::OpenStreams;
+use h3_shim::QuicConnection;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
@@ -11,7 +13,6 @@ use crate::Body;
 use bytes::Buf;
 use futures_util::future;
 use h3::client::SendRequest;
-use h3_quinn::{Connection, OpenStreams};
 use http::uri::{Authority, Scheme};
 use http::{Request, Response, Uri};
 use log::trace;
@@ -71,7 +72,7 @@ impl Pool {
     pub fn new_connection(
         &mut self,
         key: Key,
-        mut driver: h3::client::Connection<Connection, Bytes>,
+        mut driver: h3::client::Connection<QuicConnection, Bytes>,
         tx: SendRequest<OpenStreams, Bytes>,
     ) -> PoolClient {
         let (close_tx, close_rx) = std::sync::mpsc::channel();

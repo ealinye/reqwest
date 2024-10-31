@@ -78,7 +78,7 @@ socks = ["dep:tokio-socks"]
 macos-system-configuration = ["dep:system-configuration"]
 
 # Experimental HTTP/3 client.
-http3 = ["rustls-tls-manual-roots", "dep:h3", "dep:h3-quinn", "dep:quinn", "dep:slab", "dep:futures-channel"]
+http3 = ["rustls-tls-manual-roots", "dep:h3", "dep:h3-shim", "dep:futures-channel"]
 
 
 # Internal (PRIVATE!) features used to aid testing.
@@ -90,7 +90,7 @@ __tls = ["dep:rustls-pemfile", "tokio/io-util"]
 # Enables common rustls code.
 # Equivalent to rustls-tls-manual-roots but shorter :)
 __rustls = ["dep:hyper-rustls", "dep:tokio-rustls", "dep:rustls", "__tls", "dep:rustls-pemfile", "dep:rustls-pki-types"]
-__rustls-ring = ["hyper-rustls?/ring", "tokio-rustls?/ring", "rustls?/ring", "quinn?/ring"]
+__rustls-ring = ["hyper-rustls?/ring", "tokio-rustls?/ring", "rustls?/ring"]
 
 # When enabled, disable using the cached SYS_PROXIES.
 __internal_proxy_sys_no_cache = []
@@ -161,9 +161,7 @@ hickory-resolver = { version = "0.24", optional = true, features = ["tokio-runti
 
 # HTTP/3 experimental support
 h3 = { version = "0.0.6", optional = true }
-h3-quinn = { version = "0.0.7", optional = true }
-quinn = { version = "0.11.1", default-features = false, features = ["rustls", "runtime-tokio"], optional = true }
-slab = { version = "0.4.9", optional = true } # just to get minimal versions working with quinn
+h3-shim = { git = "https://github.com/genmeta/gm-quic.git", optional = true }
 futures-channel = { version = "0.3", optional = true }
 
 

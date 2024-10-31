@@ -46,11 +46,11 @@ use crate::Certificate;
 #[cfg(any(feature = "native-tls", feature = "__rustls"))]
 use crate::Identity;
 use crate::{IntoUrl, Method, Proxy, StatusCode, Url};
+#[cfg(feature = "http3")]
+use h3_shim::quic::qbase::param::ClientParameters;
+#[cfg(feature = "http3")]
+use h3_shim::quic::qbase::varint::VarInt;
 use log::debug;
-#[cfg(feature = "http3")]
-use quinn::TransportConfig;
-#[cfg(feature = "http3")]
-use quinn::VarInt;
 
 type HyperResponseFuture = hyper_util::client::legacy::ResponseFuture;
 
@@ -327,31 +327,31 @@ impl ClientBuilder {
                  quic_send_window,
                  local_address,
                  http_version_pref: &HttpVersionPref| {
-                    let mut transport_config = TransportConfig::default();
+                    let mut parameters = ClientParameters::default();
 
                     if let Some(max_idle_timeout) = quic_max_idle_timeout {
-                        transport_config.max_idle_timeout(Some(
-                            max_idle_timeout.try_into().map_err(error::builder)?,
-                        ));
+                        parameters.set_max_idle_timeout(max_idle_timeout);
                     }
 
                     if let Some(stream_receive_window) = quic_stream_receive_window {
-                        transport_config.stream_receive_window(stream_receive_window);
+                        parameters.set_initial_max_stream_data_uni(stream_receive_window);
+                        parameters.set_initial_max_stream_data_bidi_local(stream_receive_window);
                     }
 
                     if let Some(receive_window) = quic_receive_window {
-                        transport_config.receive_window(receive_window);
+                        parameters.set_initial_max_data(receive_window);
                     }
 
                     if let Some(send_window) = quic_send_window {
-                        transport_config.send_window(send_window);
+                        let try_from = VarInt::try_from(send_window);
+                        parameters.set_initial_max_stream_data_bidi_remote(try_from.unwrap());
                     }
 
                     let res = H3Connector::new(
                         DynResolver::new(resolver),
                         tls,
                         local_address,
-                        transport_config,
+                        parameters,
                     );
 
                     match res {

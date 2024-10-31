@@ -3,24 +3,24 @@ use crate::dns::DynResolver;
 use crate::error::BoxError;
 use bytes::Bytes;
 use h3::client::SendRequest;
-use h3_quinn::{Connection, OpenStreams};
+use h3_shim::quic::qbase::param::ClientParameters;
+use h3_shim::quic::QuicClient;
+use h3_shim::{conn::OpenStreams, QuicConnection};
 use http::Uri;
 use hyper_util::client::legacy::connect::dns::Name;
-use quinn::crypto::rustls::QuicClientConfig;
-use quinn::{ClientConfig, Endpoint, TransportConfig};
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 
 type H3Connection = (
-    h3::client::Connection<Connection, Bytes>,
+    h3::client::Connection<QuicConnection, Bytes>,
     SendRequest<OpenStreams, Bytes>,
 );
 
 #[derive(Clone)]
 pub(crate) struct H3Connector {
     resolver: DynResolver,
-    endpoint: Endpoint,
+    client: Arc<QuicClient>,
 }
 
 impl H3Connector {
@@ -28,22 +28,18 @@ impl H3Connector {
         resolver: DynResolver,
         tls: rustls::ClientConfig,
         local_addr: Option<IpAddr>,
-        transport_config: TransportConfig,
+        transport_config: ClientParameters,
     ) -> Result<H3Connector, BoxError> {
-        let quic_client_config = Arc::new(QuicClientConfig::try_from(tls)?);
-        let mut config = ClientConfig::new(quic_client_config);
-        // FIXME: Replace this when there is a setter.
-        config.transport_config(Arc::new(transport_config));
-
         let socket_addr = match local_addr {
             Some(ip) => SocketAddr::new(ip, 0),
             None => "[::]:0".parse::<SocketAddr>().unwrap(),
         };
 
-        let mut endpoint = Endpoint::client(socket_addr)?;
-        endpoint.set_default_client_config(config);
-
-        Ok(Self { resolver, endpoint })
+        let client = QuicClient::bind_with_tls([socket_addr], tls)
+            .with_parameters(transport_config)
+            .build();
+        let client = client.into();
+        Ok(Self { resolver, client })
     }
 
     pub async fn connect(&mut self, dest: Uri) -> Result<H3Connection, BoxError> {
@@ -76,10 +72,10 @@ impl H3Connector {
     ) -> Result<H3Connection, BoxError> {
         let mut err = None;
         for addr in addrs {
-            match self.endpoint.connect(addr, server_name)?.await {
+            match self.client.connect(server_name, addr) {
                 Ok(new_conn) => {
-                    let quinn_conn = Connection::new(new_conn);
-                    return Ok(h3::client::new(quinn_conn).await?);
+                    let gm_quic_conn = QuicConnection::new(new_conn).await;
+                    return Ok(h3::client::new(gm_quic_conn).await?);
                 }
                 Err(e) => err = Some(e),
             }
