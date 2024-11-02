@@ -161,7 +161,7 @@ hickory-resolver = { version = "0.24", optional = true, features = ["tokio-runti
 
 # HTTP/3 experimental support
 h3 = { version = "0.0.6", optional = true }
-h3-shim = { git = "https://github.com/genmeta/gm-quic.git", optional = true }
+h3-shim = { git = "https://github.com/ealinye/gm-quic.git", optional = true }
 futures-channel = { version = "0.3", optional = true }
 
 
